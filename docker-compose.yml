@@ -1,0 +1,104 @@
+version: "3.8"
+
+services:
+  # =============================================================================
+  # Streamlit Frontend (Default - Direct Mode)
+  # =============================================================================
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-code-explainer-streamlit
+    ports:
+      - "7860:7860"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_BASE_URL=${GROQ_BASE_URL:-https://api.groq.com}
+      - GROQ_MODEL_NAME=${GROQ_MODEL_NAME:-llama-3.3-70b-versatile}
+    env_file:
+      - .env
+    volumes:
+      - ./src:/home/user/app/src:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles:
+      - default
+      - streamlit
+
+  # =============================================================================
+  # FastAPI Backend (API Mode)
+  # =============================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: ai-code-explainer-api
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_BASE_URL=${GROQ_BASE_URL:-https://api.groq.com}
+      - GROQ_MODEL_NAME=${GROQ_MODEL_NAME:-llama-3.3-70b-versatile}
+    env_file:
+      - .env
+    volumes:
+      - ./src:/home/user/app/src:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    profiles:
+      - api-mode
+
+  # =============================================================================
+  # Streamlit Frontend (API Mode - connects to FastAPI)
+  # =============================================================================
+  streamlit-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-code-explainer-streamlit-api
+    ports:
+      - "7860:7860"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_BASE_URL=${GROQ_BASE_URL:-https://api.groq.com}
+      - GROQ_MODEL_NAME=${GROQ_MODEL_NAME:-llama-3.3-70b-versatile}
+    env_file:
+      - .env
+    command: >
+      streamlit run src/streamlit_app.py 
+      --server.port=7860 
+      --server.address=0.0.0.0 
+      --server.enableXsrfProtection=false 
+      --server.enableCORS=false 
+      --server.maxUploadSize=200 
+      --server.headless=true
+      -- --mode api --api-url http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles:
+      - api-mode
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  default:
+    name: ai-code-explainer-network
